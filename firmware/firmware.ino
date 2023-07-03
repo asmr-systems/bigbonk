@@ -5,10 +5,12 @@ const  unsigned int NumberOfPads               = 9;
 uint8_t*            midi_channel               = DefaultMidiChannelMap;
 uint8_t*            midi_note                  = DefaultMidiNoteMap;
 const  unsigned int GateDuration               = 100;                      // length (ms) of gate signal.
+const  uint8_t      MidiVelocityMin            = 20;
+const  uint8_t      MidiVelocityMax            = 127;
 
 /** :::: parameters.    */
 const  unsigned int ADCMax                  = 1024;
-const  unsigned int hysteresis              = (float)ADCMax*0.05;
+const  unsigned int hysteresis              = (float)ADCMax*0.03;
 
 /** :::: state.         */
 static unsigned int peak[NumberOfPads]      = { 0     };    // peak within a trigger event.
@@ -91,7 +93,7 @@ void scan_inputs() {
             }
             else if (level <= (peak[i] - hysteresis)) {
                 // triggered event is complete.
-                velocity[i]  = (uint8_t)(((float)peak[i]/(float)ADCMax) * 127.0);
+                velocity[i]  = MidiVelocityMin + (uint8_t)(((float)peak[i]/(float)ADCMax) * (MidiVelocityMax-MidiVelocityMin));
                 gate_for[i]  = GateDuration;
                 triggered[i] = false;
                 peak[i]      = level;
