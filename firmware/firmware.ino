@@ -11,6 +11,7 @@ const  uint8_t      MidiVelocityMax            = 127;
 /** :::: parameters.    */
 const  unsigned int ADCMax                  = 1024;
 const  unsigned int hysteresis              = (float)ADCMax*0.03;
+const  unsigned int debounceDelay           = 20; // ms
 
 /** :::: state.         */
 static unsigned int peak[NumberOfPads]      = { 0     };    // peak within a trigger event.
@@ -18,7 +19,30 @@ static bool         triggered[NumberOfPads] = { false };    // triggered state o
 static bool         onset[NumberOfPads]     = { false };    // gate onset of a pad.
 static unsigned int velocity[NumberOfPads]  = { 0     };    // velocity of trigger event.
 static unsigned int gate_for[NumberOfPads]  = { 0     };    // remaining time (ms) to gate.
-
+static int lastButtonState[8] = {0};
+static int lastDebounceTime[8] = {0};
+static int buttonState[8] = {0};
+int SelectedPreset = 0;
+uint8_t* MidiChannelPreset[8] = {
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap,
+    DefaultMidiChannelMap
+};
+uint8_t* MidiNotePreset[8] = {
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap,
+    DefaultMidiNoteMap
+};
 
 #define MIDI_FREQ_HZ      31250
 // #define MIDI_FREQ_HZ      38400  // DEBUGGING
@@ -30,7 +54,7 @@ const uint8_t MIDI_CMD_NOTE_ON = 0x90;
 #define INPUT_SELECT_0 A2
 #define INPUT_SELECT_1 A1
 #define INPUT_SELECT_2 A0
-
+static unsigned int buttons[8] = {3, 4, 5, 6, 7, 8, 9, 10};
 
 void set_input_select(uint8_t n) {
     if (n < 8) {
@@ -47,15 +71,65 @@ void setup() {
     pinMode(INPUT_SELECT_1, OUTPUT);
     pinMode(INPUT_SELECT_2, OUTPUT);
 
+    for (auto i=0; i < 8; i++) {
+        pinMode(buttons[i], INPUT);
+    }
+
     midi_note = SP404_Bank_1;
 }
 
 void loop() {
     scan_inputs();
+    scan_buttons();
     set_gates();
 
     // TODO: check for range changes.
 }
+
+void scan_buttons() {
+    int prevPreset = SelectedPreset;
+    for (int i=0; i< 8; i++) {
+        if (read_button_debounced(i)) {
+            SelectedPreset = i;
+        }
+    }
+
+    if (SelectedPreset != prevPreset) {
+        Serial.print("SELECTED ");
+        Serial.println(SelectedPreset);
+    }
+}
+
+unsigned int read_button_debounced(uint8_t i) {
+      // read the state of the switch into a local variable:
+  int reading = digitalRead(buttons[i]);
+
+  // check to see if you just pressed the button
+  // (i.e. the input went from LOW to HIGH), and you've waited long enough
+  // since the last press to ignore any noise:
+
+  // If the switch changed, due to noise or pressing:
+  if (reading != lastButtonState[i]) {
+    // reset the debouncing timer
+    lastDebounceTime[i] = millis();
+  }
+
+  if ((millis() - lastDebounceTime[i]) > debounceDelay) {
+    // whatever the reading is at, it's been there for longer than the debounce
+    // delay, so take it as the actual current state:
+
+    // if the button state has changed:
+    if (reading != buttonState[i]) {
+      buttonState[i] = reading;
+    }
+  }
+
+  // save the reading. Next time through the loop, it'll be the lastButtonState:
+  lastButtonState[i] = reading;
+
+  return buttonState[i];
+}
+
 
 unsigned int read_pad_voltage(uint8_t n) {
     // since the HC4051 only has 8 mux channels and we have
@@ -146,13 +220,13 @@ void set_gates() {
 
 
 void set_midi_note_on(uint8_t n) {
-    Serial.write(MIDI_CMD_NOTE_ON|midi_channel[n]);  // transmit note on command.
-    Serial.write(midi_note[n]);                      // send the note data.
+    Serial.write(MIDI_CMD_NOTE_ON|MidiChannelPreset[SelectedPreset][n]);  // transmit note on command.
+    Serial.write(MidiNotePreset[SelectedPreset][n]);                      // send the note data.
     Serial.write(velocity[n]);
 }
 
 void set_midi_note_off(uint8_t n) {
-    Serial.write(MIDI_CMD_NOTE_OFF|midi_channel[n]);  // transmit note off command.
-    Serial.write(midi_note[n]);                       // send the note data.
+    Serial.write(MIDI_CMD_NOTE_OFF|MidiChannelPreset[SelectedPreset][n]);  // transmit note off command.
+    Serial.write(MidiNotePreset[SelectedPreset][n]);                       // send the note data.
     Serial.write(0);
 }
